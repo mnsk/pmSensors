@@ -67,6 +67,8 @@ int pm5003::transmitPM10(unsigned char *thebuf)
 }
 
 void pm5003::printAll(unsigned char *thebuf, char leng) {
+	Serial.println(F("PM DATA: "));
+
 	uint8_t count = 1;
 	int val;
 	for(int i=1; i<leng; i+=2) {
