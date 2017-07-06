@@ -1,14 +1,16 @@
 //pmSensor.ino
-#include <VoltageReference.h>
+//#include <VoltageReference.h>
 #include <AltSoftSerial.h>
 #include <BME280_I2C.h>
 #include <Wire.h>
+#include <U8g2lib.h>
 #include <avr/wdt.h>
 #include <SPI.h>
 #include <RF24.h>
 #include <BTLE.h>
 
 #include "pm5003.h"
+#include "oled.h"
 
 #define DEBUG_ON
 #define DEBUG_SETUP
@@ -22,13 +24,17 @@
 #define OLED_TIME 2000
 #define START_TIME 9000
 #define BLE_TIME 6000
+#define SAMPLES 10
+#define LOW_BATT_THRSH 3580
 
-uint8_t MAC[6] = {0xC0,0x2C,0xBE,0x2C,0x12,0xD7};
+uint8_t MAC[6] = {0xC0,0x2C,0xBE,0x2C,0x12,0xD8};
 
 BME280_I2C bme;
-VoltageReference vRef;
 AltSoftSerial altSerial;
 pm5003 pm;
+oled display;
+
+//extern U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 RF24 radio(7,10);
 BTLE btle(&radio);
@@ -243,19 +249,27 @@ void setup() {
 	Serial.begin(115200);
 	while(!Serial) {} // Wait  
 
+	analogReference(INTERNAL);	//setting 1.1v internal reference
+	analogRead(A0);
+
   	altSerial.begin(9600); //Serial for PM sensor  
   	altSerial.setTimeout(1500); //set the Timeout to 1500ms, longer than the data transmission periodic time of the sensor
   	#ifdef DEBUG_SETUP
 	Serial.println(F("Initializing..."));
 	#endif
 
-	vRef.begin();	//enter calibrated value by checking from multimeter
-	pinMode(A0, INPUT);
-
 	btle.begin("creav");
 	radio.powerDown();
- 	
- 	wdt_enable(WDTO_8S);
+
+	wdt_enable(WDTO_8S);
+
+	display.oledInit();
+
+	//draw creav logo
+	display.u8g2.firstPage();
+	do {
+		display.drawLogo();
+	} while ( display.u8g2.nextPage() );
 
  	while(!bme.begin()){
     	#ifdef DEBUG_SETUP
@@ -268,9 +282,10 @@ void setup() {
 void loop() {
 
 	float temp=0.0, press=0.0, hum=0.0;
-	int pm1=0, pm2_5=0, pm10=0;
+	int pm1=0, pm2_5=0, pm10=0, aqi=0;
 	unsigned char buf[LENG];
-	uint16_t vcc=0, voltage=0;
+	static uint16_t voltage;
+	static byte analogCount, lowVoltCount;
 
 	#ifdef DEBUG_ON
 	if (Serial.available()) {
@@ -313,6 +328,7 @@ void loop() {
 				pm1=pm.transmitPM01(buf); //count PM1.0 value of the air detector module
 				pm2_5=pm.transmitPM2_5(buf);//count PM2.5 value of the air detector module
 				pm10=pm.transmitPM10(buf); //count PM10 value of the air detector module
+				aqi=pm.calculateAQI(pm2_5);
 				#ifdef DEBUG_ON
 				if(debug) {
 					pm.printAll(buf,LENG);
@@ -327,13 +343,27 @@ void loop() {
 
   	if (millis() - waitOled >= OLED_TIME) {
   		#ifdef DEBUG_ON
-  		if(debug)
-  		Serial.println(F("Updating Oled..."));
+  		if(debug) {
+	  		Serial.println(F("Updating oled..."));
+	  		Serial.print("AQI: ");
+	  		Serial.println(aqi);
+	  	}
   		#endif
+  		aqi = map(aqi,0,300,0,63);
+  		#ifdef DEBUG_ON
+  		if(debug){
+	  		Serial.print("Mapped AQI: ");
+	  		Serial.println(aqi);
+	  	}
+  		#endif
+  		display.u8g2.firstPage();
+  		do {
+		  	display.drawScreen();
+		  	display.setOledReading(temp,hum,press,pm1,pm2_5,pm10);
+		    display.drawPointer(aqi);
+		} while ( display.u8g2.nextPage() );
   		waitOled = millis();
   	}
-
-  	vcc = vRef.readVcc();	//voltage calculated from internal reference
 
   	static unsigned long wait=millis();
 
@@ -341,7 +371,29 @@ void loop() {
 
   		wdt_reset();
 
-  		voltage = analogRead(A0) * (vcc / 1024.0);
+  		voltage = ((voltage/10)*43)/analogCount;	//values of vresistor in voltage divider (R2=10K,R1+R2=43K)
+
+  		if(voltage < LOW_BATT_THRSH)
+  			lowVoltCount++;
+  		else
+  			lowVoltCount = 0;
+
+  		if(lowVoltCount >= SAMPLES) {
+  			display.u8g2.firstPage();
+			do {
+				display.drawBattLogo();
+				#ifdef DEBUG_ON
+				if(debug) {
+					display.u8g2.setCursor(36,55);
+					display.u8g2.print(voltage);
+					display.u8g2.print(" V");
+				}
+				#endif
+			} while ( display.u8g2.nextPage() );
+			while(1){
+			    wdt_reset();			//enters in infinite loop
+			}
+  		}
 
   		#ifdef DEBUG_ON
   		if(debug) {
@@ -363,10 +415,15 @@ void loop() {
 			Serial.print(pm10);
 			Serial.println(" ug/m3");   
 
-			Serial.print("Vcc: ");
-			Serial.print(vcc);
+			Serial.print("Count: ");
+			Serial.print(analogCount);
 			Serial.print(" Voltage: ");
 			Serial.println(voltage);
+
+			display.u8g2.firstPage();
+			do {
+				display.showDebug(temp,hum,press,pm1,pm2_5,pm10,voltage,aqi);
+			} while ( display.u8g2.nextPage() );
 		}
 		#endif
 
@@ -396,7 +453,14 @@ void loop() {
 
 		radio.powerDown();
 		wait = millis();
+		voltage = 0;
+		analogCount = 0;
 
+	}
+
+	if(analogCount < SAMPLES) {
+		voltage += analogRead(A0) * (1100 / 1024.0);
+		analogCount++;
 	}
 
 	wdt_reset();

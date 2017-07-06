@@ -81,3 +81,33 @@ void pm5003::printAll(unsigned char *thebuf, char leng) {
 
 	
 }
+
+/* Takes the PM2.5 float data and converts it into the air quality index (AQI)
+   in accordance to the US EPA's standards.*/
+int pm5003::calculateAQI(float pm25)
+{
+    int iLow, iHigh, ii;
+    float cLow, cHigh;
+
+    cLow = 0;
+    cHigh = 0;
+    iHigh = 0;
+    iLow = 0;
+
+    /* Finding out the boundary values and calculating the PM2.5 based off
+        that */
+    for(ii=0;ii<7;ii++)
+    {
+        if (concentrationBoundaries[ii][0] <= pm25
+                && concentrationBoundaries[ii][1] >= pm25)
+        {
+            cLow = concentrationBoundaries[ii][0];
+            cHigh = concentrationBoundaries[ii][1];
+            iLow = indexBoundaries[ii][0];
+            iHigh = indexBoundaries[ii][1];
+            break;
+        }
+    }
+        
+    return (int)(((iHigh - iLow)/(cHigh - cLow)) * (pm25 - cLow)) + iLow;
+}
