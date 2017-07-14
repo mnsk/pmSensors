@@ -123,7 +123,7 @@ void oled::setOledReading(float temp, float hum, float press, int pm1, int pm2_5
 	u8g2.print(pm10);
 }
 
-void oled::showDebug(float temp, float hum, float press, int pm1, int pm2_5, int pm10, int voltage, int aqi) {
+void oled::showDebug(float temp, float hum, float press, int pm1, int pm2_5, int pm10, int voltage, int aqi, bool cableInserted) {
 	if(temp<0)
 		u8g2.setCursor(0,line(0));
 	else
@@ -147,4 +147,6 @@ void oled::showDebug(float temp, float hum, float press, int pm1, int pm2_5, int
 	u8g2.setCursor(36,line(5));
 	u8g2.print(voltage);
 	u8g2.print(" V");
+	if(cableInserted)
+		u8g2.print("+");
 }

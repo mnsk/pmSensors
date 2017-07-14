@@ -13,5 +13,5 @@ class oled {
 		void setOledReading(float temp, float hum, float press, int pm1, int pm2_5, int pm10);
 		void drawLogo();
 		void drawBattLogo();
-		void showDebug(float temp, float hum, float press, int pm1, int pm2_5, int pm10, int voltage, int aqi);
+		void showDebug(float temp, float hum, float press, int pm1, int pm2_5, int pm10, int voltage, int aqi, bool cableInserted);
 };

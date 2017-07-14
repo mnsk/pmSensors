@@ -27,6 +27,9 @@
 #define SAMPLES 10
 #define LOW_BATT_THRSH 3580
 
+#define VBUS_PIN 2
+#define BATT_PIN_VALUE 1234
+
 uint8_t MAC[6] = {0xC0,0x2C,0xBE,0x2C,0x12,0xD8};
 
 BME280_I2C bme;
@@ -252,6 +255,8 @@ void setup() {
 	analogReference(INTERNAL);	//setting 1.1v internal reference
 	analogRead(A0);
 
+	pinMode(VBUS_PIN, INPUT);
+
   	altSerial.begin(9600); //Serial for PM sensor  
   	altSerial.setTimeout(1500); //set the Timeout to 1500ms, longer than the data transmission periodic time of the sensor
   	#ifdef DEBUG_SETUP
@@ -286,6 +291,8 @@ void loop() {
 	unsigned char buf[LENG];
 	static uint16_t voltage;
 	static byte analogCount, lowVoltCount;
+
+	bool cableInserted = digitalRead(VBUS_PIN);
 
 	#ifdef DEBUG_ON
 	if (Serial.available()) {
@@ -373,7 +380,7 @@ void loop() {
 
   		voltage = ((voltage/10)*43)/analogCount;	//values of vresistor in voltage divider (R2=10K,R1+R2=43K)
 
-  		if(voltage < LOW_BATT_THRSH)
+  		if((voltage < LOW_BATT_THRSH) && (cableInserted == false))
   			lowVoltCount++;
   		else
   			lowVoltCount = 0;
@@ -394,6 +401,9 @@ void loop() {
 			    wdt_reset();			//enters in infinite loop
 			}
   		}
+
+  		if(cableInserted)
+  			voltage = BATT_PIN_VALUE; 
 
   		#ifdef DEBUG_ON
   		if(debug) {
@@ -422,7 +432,7 @@ void loop() {
 
 			display.u8g2.firstPage();
 			do {
-				display.showDebug(temp,hum,press,pm1,pm2_5,pm10,voltage,aqi);
+				display.showDebug(temp,hum,press,pm1,pm2_5,pm10,voltage,aqi,cableInserted);
 			} while ( display.u8g2.nextPage() );
 		}
 		#endif
